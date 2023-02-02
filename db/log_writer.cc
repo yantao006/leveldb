@@ -24,6 +24,7 @@ Writer::Writer(WritableFile* dest) : dest_(dest), block_offset_(0) {
   InitTypeCrc(type_crc_);
 }
 
+// dest_length: 已使用的空间大小，也即offset
 Writer::Writer(WritableFile* dest, uint64_t dest_length)
     : dest_(dest), block_offset_(dest_length % kBlockSize) {
   InitTypeCrc(type_crc_);
