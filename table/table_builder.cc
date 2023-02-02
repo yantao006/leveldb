@@ -91,6 +91,7 @@ Status TableBuilder::ChangeOptions(const Options& options) {
   return Status::OK();
 }
 
+// 将key-value对添加到TableBuilder中
 void TableBuilder::Add(const Slice& key, const Slice& value) {
   Rep* r = rep_;
   assert(!r->closed);
@@ -114,10 +115,12 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
 
   r->last_key.assign(key.data(), key.size());
   r->num_entries++;
+  // 向data block中添加一组key-value pair
   r->data_block.Add(key, value);
 
   const size_t estimated_block_size = r->data_block.CurrentSizeEstimate();
-  if (estimated_block_size >= r->options.block_size) {
+  if (estimated_block_size >= r->options.block_size) { // options.block_size默认为4KB
+    // 追加写入到sstable file
     Flush();
   }
 }
@@ -197,19 +200,25 @@ Status TableBuilder::status() const { return rep_->status; }
 
 Status TableBuilder::Finish() {
   Rep* r = rep_;
-  Flush();
+  Flush();  /*写入尚未Flush的Block块*/
   assert(!r->closed);
   r->closed = true;
 
   BlockHandle filter_block_handle, metaindex_block_handle, index_block_handle;
 
-  // Write filter block
+  // Data Blocks: 存储一系列有序的key-value
+  // Meta Block：存储key-value对应的filter(默认为bloom filter)
+  // metaindex block: 指向Meta Block的索引
+  // Index BLocks: 指向Data Blocks的索引
+  // Footer : 指向索引的索引
+
+  // 写入filter_block块，即图中的meta block
   if (ok() && r->filter_block != nullptr) {
     WriteRawBlock(r->filter_block->Finish(), kNoCompression,
                   &filter_block_handle);
   }
 
-  // Write metaindex block
+  // 写入metaindex block
   if (ok()) {
     BlockBuilder meta_index_block(&r->options);
     if (r->filter_block != nullptr) {
@@ -225,7 +234,7 @@ Status TableBuilder::Finish() {
     WriteBlock(&meta_index_block, &metaindex_block_handle);
   }
 
-  // Write index block
+  // 写入index block
   if (ok()) {
     if (r->pending_index_entry) {
       r->options.comparator->FindShortSuccessor(&r->last_key);
@@ -237,7 +246,7 @@ Status TableBuilder::Finish() {
     WriteBlock(&r->index_block, &index_block_handle);
   }
 
-  // Write footer
+  // 写入footer， footer为固定长度，在文件的最尾部
   if (ok()) {
     Footer footer;
     footer.set_metaindex_handle(metaindex_block_handle);

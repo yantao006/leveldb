@@ -63,6 +63,7 @@ Slice BlockBuilder::Finish() {
   for (size_t i = 0; i < restarts_.size(); i++) {
     PutFixed32(&buffer_, restarts_[i]);
   }
+  // TODO 存restarts_.size()的作用是什么？待分析
   PutFixed32(&buffer_, restarts_.size());
   finished_ = true;
   return Slice(buffer_);
@@ -72,10 +73,12 @@ void BlockBuilder::Add(const Slice& key, const Slice& value) {
   Slice last_key_piece(last_key_);
   assert(!finished_);
   assert(counter_ <= options_->block_restart_interval);
+  // buffer_为空 或 当前添加的key大于之前的任何key
   assert(buffer_.empty()  // No values yet?
          || options_->comparator->Compare(key, last_key_piece) > 0);
   size_t shared = 0;
-  if (counter_ < options_->block_restart_interval) {
+  // 前缀压缩(prefix-compressed)
+  if (counter_ < options_->block_restart_interval) { // options_->block_restart_interval默认为16
     // See how much sharing to do with previous string
     const size_t min_length = std::min(last_key_piece.size(), key.size());
     while ((shared < min_length) && (last_key_piece[shared] == key[shared])) {
@@ -83,9 +86,14 @@ void BlockBuilder::Add(const Slice& key, const Slice& value) {
     }
   } else {
     // Restart compression
+    /*新的重启点，记录下位置*/
     restarts_.push_back(buffer_.size());
     counter_ = 0;
+    // 每间隔16个keys, LevelDb就取消使用前缀压缩，而是存储整个key(我们把存储整个key的点叫做重启点)
+    // 此时：强制设置shared==0，non_shared==key.size()，buffer中的key存储完整的长度
   }
+  // shared: 公共前缀的长度
+  // non_shared: key剩下不同的字符长度
   const size_t non_shared = key.size() - shared;
 
   // Add "<shared><non_shared><value_size>" to buffer_
@@ -94,10 +102,12 @@ void BlockBuilder::Add(const Slice& key, const Slice& value) {
   PutVarint32(&buffer_, value.size());
 
   // Add string delta to buffer_ followed by value
-  buffer_.append(key.data() + shared, non_shared);
+  buffer_.append(key.data() + shared, non_shared); // 只存公共前缀后的部分，节省存储；
   buffer_.append(value.data(), value.size());
 
   // Update state
+  // 对last_key_的赋值，只更新shared长度后的那部分数据
+  // 相比于last_key_ = key赋值，性能会更好
   last_key_.resize(shared);
   last_key_.append(key.data() + shared, non_shared);
   assert(Slice(last_key_) == key);
