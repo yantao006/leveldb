@@ -77,13 +77,17 @@ class HashTable {
   }
 
   LRUNode* Insert(LRUNode* h) {
+    // 找到对应的hash桶的表头
     LRUNode** ptr = FindPointer(h->key(), h->hash);
-    LRUNode* old = *ptr;
+    LRUNode* old = *ptr;  // 老的元素返回，LRUCache会将相同key的老元素释放，详情看LRUCache的Insert函数
     h->next_hash = (old == nullptr ? nullptr : old->next_hash);
     *ptr = h;
     if (old == nullptr) {
       ++elems_;
+      // 当整个hash表中元素的个数超过 hash表桶的的个数的时候，调用Resize函数，
+      // 该函数会将桶的个数增加一倍，同时将现有的元素搬迁到合适的桶的后面。
       if (elems_ > length_) {
+        // 提早增加桶的个数来尽可能地保持一个桶后面只有一个元素
         // Since each cache entry is fairly large, we aim for a small
         // average linked list length (<= 1).
         Resize();
@@ -105,9 +109,9 @@ class HashTable {
  private:
   // The table consists of an array of buckets where each bucket is
   // a linked list of cache entries that hash into the bucket.
-  uint32_t length_;
-  uint32_t elems_;
-  LRUNode** list_;
+  uint32_t length_;  // hash桶的个数
+  uint32_t elems_;  // 整个hash表存放的元素个数
+  LRUNode** list_;  // 二维指针，每一个指针指向一个桶的表头位置
 
   // Return a pointer to slot that points to a cache entry that
   // matches key/hash.  If there is no such cache entry, return a
@@ -133,7 +137,7 @@ class HashTable {
       while (h != nullptr) {
         LRUNode* next = h->next_hash;
         uint32_t hash = h->hash;
-        LRUNode** ptr = &new_list[hash & (new_length - 1)];
+        LRUNode** ptr = &new_list[hash & (new_length - 1)]; // 各个已有的元素重新计算，应该落在哪个桶的链表中
         h->next_hash = *ptr;
         *ptr = h;
         h = next;
@@ -177,22 +181,22 @@ class LRUCache {
   bool FinishErase(LRUNode* e) EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   // Initialized before use.
-  size_t capacity_;
+  size_t capacity_;  // LRUCache的容量
 
   // mutex_ protects the following state.
   mutable port::Mutex mutex_;
-  size_t usage_ GUARDED_BY(mutex_);
+  size_t usage_ GUARDED_BY(mutex_);  // 当前使用的容量
 
   // Dummy head of LRU list.
   // lru.prev is newest entry, lru.next is oldest entry.
   // Entries have refs==1 and in_cache==true.
-  LRUNode lru_ GUARDED_BY(mutex_);
+  LRUNode lru_ GUARDED_BY(mutex_);  // lru_ 是冷链表，属于冷宫
 
   // Dummy head of in-use list.
   // Entries are in use by clients, and have refs >= 2 and in_cache==true.
-  LRUNode in_use_ GUARDED_BY(mutex_);
+  LRUNode in_use_ GUARDED_BY(mutex_);  // in_use_ 属于热链表，热数据在此链表
 
-  HashTable table_ GUARDED_BY(mutex_);
+  HashTable table_ GUARDED_BY(mutex_);  // 哈希表
 };
 
 LRUCache::LRUCache() : capacity_(0), usage_(0) {
@@ -286,11 +290,12 @@ Cache::Handle* LRUCache::Insert(const Slice& key, uint32_t hash, void* value,
     e->in_cache = true;
     LRU_Append(&in_use_, e);
     usage_ += charge;
-    FinishErase(table_.Insert(e));
+    FinishErase(table_.Insert(e));  // 如果是更新的话，需要回收老的元素
   } else {  // don't cache. (capacity_==0 is supported and turns off caching.)
     // next is read by key() in an assert, so it must be initialized
     e->next = nullptr;
   }
+  // 如果容量超过了设计的容量，并且冷链表中有内容，则从冷链表中删除所有元素
   while (usage_ > capacity_ && lru_.next != &lru_) {
     LRUNode* old = lru_.next;
     assert(old->refs == 1);
