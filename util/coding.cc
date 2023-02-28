@@ -7,9 +7,9 @@
 namespace leveldb {
 
 void PutFixed32(std::string* dst, uint32_t value) {
-  char buf[sizeof(value)];
-  EncodeFixed32(buf, value);
-  dst->append(buf, sizeof(buf));
+  char buf[sizeof(value)]; // sizeof(uint32_t) == 4, 取4字节buf
+  EncodeFixed32(buf, value); // 将value编码到buf中
+  dst->append(buf, sizeof(buf)); // 将buf append到dst末尾
 }
 
 void PutFixed64(std::string* dst, uint64_t value) {
@@ -18,6 +18,8 @@ void PutFixed64(std::string* dst, uint64_t value) {
   dst->append(buf, sizeof(buf));
 }
 
+// EncodeVarint32是易懂版
+// EncodeVarint64实现更加简练
 char* EncodeVarint32(char* dst, uint32_t v) {
   // Operate on characters as unsigneds
   uint8_t* ptr = reinterpret_cast<uint8_t*>(dst);
@@ -48,8 +50,8 @@ char* EncodeVarint32(char* dst, uint32_t v) {
 
 void PutVarint32(std::string* dst, uint32_t v) {
   char buf[5];
-  char* ptr = EncodeVarint32(buf, v);
-  dst->append(buf, ptr - buf);
+  char* ptr = EncodeVarint32(buf, v); // 将v编码到变长buf中，返回ptr是编码的末地址
+  dst->append(buf, ptr - buf); // ptr-buf是实际编码所占用的字节数
 }
 
 char* EncodeVarint64(char* dst, uint64_t v) {

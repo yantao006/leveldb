@@ -19,6 +19,7 @@
 
 namespace leveldb {
 
+// 将value编码到dst字符串中，append到后面
 // Standard Put... routines append to a string
 void PutFixed32(std::string* dst, uint32_t value);
 void PutFixed64(std::string* dst, uint64_t value);
@@ -55,6 +56,8 @@ inline void EncodeFixed32(char* dst, uint32_t value) {
   uint8_t* const buffer = reinterpret_cast<uint8_t*>(dst);
 
   // Recent clang and gcc optimize this to a single mov / str instruction.
+  // value为uint32_t，占4字节，低位第1个字节放入buffer[0]中，以此类推
+  // buffer地址指向低位地址buffer[0]
   buffer[0] = static_cast<uint8_t>(value);
   buffer[1] = static_cast<uint8_t>(value >> 8);
   buffer[2] = static_cast<uint8_t>(value >> 16);
@@ -82,6 +85,7 @@ inline uint32_t DecodeFixed32(const char* ptr) {
   const uint8_t* const buffer = reinterpret_cast<const uint8_t*>(ptr);
 
   // Recent clang and gcc optimize this to a single mov / ldr instruction.
+  // buffer地址指向低位地址buffer[0]
   return (static_cast<uint32_t>(buffer[0])) |
          (static_cast<uint32_t>(buffer[1]) << 8) |
          (static_cast<uint32_t>(buffer[2]) << 16) |
