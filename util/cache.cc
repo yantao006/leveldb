@@ -77,11 +77,11 @@ class HashTable {
   }
 
   LRUNode* Insert(LRUNode* h) {
-    // 找到对应的hash桶的表头
+    // 找到对应的hash桶的表头，然后遍历链表搜索，返回找到的对应节点
     LRUNode** ptr = FindPointer(h->key(), h->hash);
     LRUNode* old = *ptr;  // 老的元素返回，LRUCache会将相同key的老元素释放，详情看LRUCache的Insert函数
-    h->next_hash = (old == nullptr ? nullptr : old->next_hash);
-    *ptr = h;
+    h->next_hash = (old == nullptr ? nullptr : old->next_hash); // h->next_hash指向园表头指向的地方？？
+    *ptr = h; // 此处需要修改表头指针的值：表头指针的值更新为h
     if (old == nullptr) {
       ++elems_;
       // 当整个hash表中元素的个数超过 hash表桶的的个数的时候，调用Resize函数，
@@ -121,6 +121,8 @@ class HashTable {
     while (*ptr != nullptr && ((*ptr)->hash != hash || key != (*ptr)->key())) {
       ptr = &(*ptr)->next_hash;
     }
+    // ptr为LRUNode*的指针（LRUNode节点指针的指针）
+    // 因为函数调用方需要能够修改LRUNode*的值，如果返回值为LRUNode*，修改的只是其副本
     return ptr;
   }
 
@@ -138,8 +140,8 @@ class HashTable {
         LRUNode* next = h->next_hash;
         uint32_t hash = h->hash;
         LRUNode** ptr = &new_list[hash & (new_length - 1)]; // 各个已有的元素重新计算，应该落在哪个桶的链表中
-        h->next_hash = *ptr;
-        *ptr = h;
+        h->next_hash = *ptr; // 将h节点放在*ptr节点的前面
+        *ptr = h; // 更新*ptr，指向新的头节点，即h
         h = next;
         count++;
       }
@@ -241,6 +243,7 @@ void LRUCache::Unref(LRUNode* e) {
   }
 }
 
+// 调用remove接口，不需要传e所在的list指针
 void LRUCache::LRU_Remove(LRUNode* e) {
   e->next->prev = e->prev;
   e->prev->next = e->next;
@@ -270,8 +273,7 @@ void LRUCache::Release(Cache::Handle* handle) {
 
 Cache::Handle* LRUCache::Insert(const Slice& key, uint32_t hash, void* value,
                                 size_t charge,
-                                void (*deleter)(const Slice& key,
-                                                void* value)) {
+                                void (*deleter)(const Slice& key, void* value)) {
   MutexLock l(&mutex_);
 
   LRUNode* e =

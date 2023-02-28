@@ -25,6 +25,7 @@ class Arena {
   // Return a pointer to a newly allocated memory block of "bytes" bytes.
   char* Allocate(size_t bytes);
 
+  // 内存对齐方式的内存分配
   // Allocate memory with the normal alignment guarantees provided by malloc.
   char* AllocateAligned(size_t bytes);
 
@@ -52,6 +53,8 @@ class Arena {
   std::atomic<size_t> memory_usage_;
 };
 
+// Allocate计算逻辑较为简单，使用inline方式实现
+// AllocateAligned较为复杂，没有用inline方式
 inline char* Arena::Allocate(size_t bytes) {
   // The semantics of what to return are a bit messy if we allow
   // 0-byte allocations, so we disallow them here (we don't need
