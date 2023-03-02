@@ -12,7 +12,7 @@ namespace leveldb {
 
 const char* Status::CopyState(const char* state) {
   uint32_t size;
-  std::memcpy(&size, state, sizeof(size));
+  std::memcpy(&size, state, sizeof(size)); // 通过前4个字节读取size
   char* result = new char[size + 5];
   std::memcpy(result, state, size + 5);
   return result;
@@ -22,7 +22,7 @@ Status::Status(Code code, const Slice& msg, const Slice& msg2) {
   assert(code != kOk);
   const uint32_t len1 = static_cast<uint32_t>(msg.size());
   const uint32_t len2 = static_cast<uint32_t>(msg2.size());
-  const uint32_t size = len1 + (len2 ? (2 + len2) : 0);
+  const uint32_t size = len1 + (len2 ? (2 + len2) : 0); // 额外2个字节用来填": "
   char* result = new char[size + 5];
   std::memcpy(result, &size, sizeof(size));
   result[4] = static_cast<char>(code);
@@ -40,6 +40,7 @@ std::string Status::ToString() const {
     return "OK";
   } else {
     char tmp[30];
+    // 先根据code()给type赋值
     const char* type;
     switch (code()) {
       case kOk:

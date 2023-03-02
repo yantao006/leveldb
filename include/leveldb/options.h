@@ -29,6 +29,7 @@ enum CompressionType {
   kSnappyCompression = 0x1
 };
 
+// Option类，做一些默认设置
 // Options to control the behavior of a database (passed to DB::Open)
 struct LEVELDB_EXPORT Options {
   // Create an Options object with default values for all fields.

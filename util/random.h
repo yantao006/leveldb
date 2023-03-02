@@ -9,6 +9,7 @@
 
 namespace leveldb {
 
+// 一个简易的随机数生成器
 // A very simple random number generator.  Not especially good at
 // generating truly random bits, but good enough for our needs in this
 // package.
@@ -44,6 +45,7 @@ class Random {
     }
     return seed_;
   }
+  // 返回一个在[0,n-1]之间均匀分布的随机数
   // Returns a uniformly distributed value in the range [0..n-1]
   // REQUIRES: n > 0
   uint32_t Uniform(int n) { return Next() % n; }

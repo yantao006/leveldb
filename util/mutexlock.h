@@ -20,6 +20,8 @@ namespace leveldb {
 //     ... some complex code, possibly with multiple return paths ...
 //   }
 
+// 封装了一个对mutex进行加锁、解锁的类，构造函数时加锁，析构时解锁
+// 类似一个Guard
 class SCOPED_LOCKABLE MutexLock {
  public:
   explicit MutexLock(port::Mutex* mu) EXCLUSIVE_LOCK_FUNCTION(mu) : mu_(mu) {
