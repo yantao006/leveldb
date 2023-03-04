@@ -28,6 +28,13 @@ class BytewiseComparatorImpl : public Comparator {
     return a.compare(b);
   }
 
+  /*************************************************************
+   * 计算分割key，结果存在*start中
+   * 举例：
+   * 如*start: helloleveldb， limit:helloworld时，结果*start=hellom
+   * 特例：当*start为limit的子串时，
+   * 如*start: hello， limit:helloworld时，结果*start=hello
+   * **********************************************************/
   void FindShortestSeparator(std::string* start,
                              const Slice& limit) const override {
     // Find length of common prefix
@@ -39,6 +46,7 @@ class BytewiseComparatorImpl : public Comparator {
     }
 
     if (diff_index >= min_length) {
+      // 特例：当*start为limit的子串时
       // Do not shorten if one string is a prefix of the other
     } else {
       uint8_t diff_byte = static_cast<uint8_t>((*start)[diff_index]);
