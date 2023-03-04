@@ -97,30 +97,46 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
   assert(!r->closed);
   if (!ok()) return;
   if (r->num_entries > 0) {
+    // 确保添加的key必须是有序的，即本次添加的key必须大于之前的任意key
     assert(r->options.comparator->Compare(key, Slice(r->last_key)) > 0);
   }
 
+  /******************************************************
+   *  *更新index_block的部分*
+   *  index_block中的内容是：key=分割key， value=上一个data_block的（offset, size）
+   *  因此index_block的写入时机是当data_block插入第一个key-value的时候，需要计算分割key，
+   *  以及存入index_block
+   *
+   *  pending_index_entry：标志位，用来判断是不是data_block的第一个key，
+   *  因此在上一个data_block Flush的时候，就会将标志位置位（true），
+   *  当下一个data_block第一个key-value到来后，成功往index_block插入分割key之后，就会清零。
+   *****************************************************/
   if (r->pending_index_entry) {
     assert(r->data_block.empty());
     r->options.comparator->FindShortestSeparator(&r->last_key, key);
     std::string handle_encoding;
     r->pending_handle.EncodeTo(&handle_encoding);
+    /*****************************************************
+     * 计算出来的分割key即r->last_key作为key，而上一个data_block的位置信息作为value
+     * pending_handle里面存放的是上一个data_block的位置信息，BlockHandler类型
+     *****************************************************/
     r->index_block.Add(r->last_key, Slice(handle_encoding));
     r->pending_index_entry = false;
   }
 
+  // 更新filter_block的部分
   if (r->filter_block != nullptr) {
     r->filter_block->AddKey(key);
   }
 
-  r->last_key.assign(key.data(), key.size());
-  r->num_entries++;
-  // 向data block中添加一组key-value pair
-  r->data_block.Add(key, value);
+  // 向data_block中添加一组key-value pair
+  r->last_key.assign(key.data(), key.size()); // 更新last_key的值
+  r->num_entries++; // 更新计数
+  r->data_block.Add(key, value); // 具体的添加操作，使用BlockBuild接口进行添加
 
+  // 当data_block的size超过4KB时，flush到sstable file中
   const size_t estimated_block_size = r->data_block.CurrentSizeEstimate();
   if (estimated_block_size >= r->options.block_size) { // options.block_size默认为4KB
-    // 追加写入到sstable file
     Flush();
   }
 }
@@ -131,9 +147,12 @@ void TableBuilder::Flush() {
   if (!ok()) return;
   if (r->data_block.empty()) return;
   assert(!r->pending_index_entry);
+  /** 将data_block写入带file中，并将其offset和size记录到pending_handle中。
+   * 即pending_handle记录的是上一个data_block的信息，用于index_block的信息记录
+   * */
   WriteBlock(&r->data_block, &r->pending_handle);
   if (ok()) {
-    r->pending_index_entry = true;
+    r->pending_index_entry = true; // pending_index_entry置位
     r->status = r->file->Flush();
   }
   if (r->filter_block != nullptr) {
@@ -141,6 +160,9 @@ void TableBuilder::Flush() {
   }
 }
 
+/** 将block写入带file中，并将block的offset和size记录到handle中
+ * 注意：handle中的size不包括type和crc内容
+ * */
 void TableBuilder::WriteBlock(BlockBuilder* block, BlockHandle* handle) {
   // File format contains a sequence of blocks where each block has:
   //    block_data: uint8[n]
@@ -198,27 +220,30 @@ void TableBuilder::WriteRawBlock(const Slice& block_contents,
 
 Status TableBuilder::status() const { return rep_->status; }
 
+/** 将数据从rep_写入到文件系统中 */
 Status TableBuilder::Finish() {
   Rep* r = rep_;
-  Flush();  /*写入尚未Flush的Block块*/
-  assert(!r->closed);
+  Flush();  /** 1、写入尚未Flush的data_block */
+  assert(!r->closed); // r之前没被写入到文件过
   r->closed = true;
 
   BlockHandle filter_block_handle, metaindex_block_handle, index_block_handle;
 
-  // Data Blocks: 存储一系列有序的key-value
-  // Meta Block：存储key-value对应的filter(默认为bloom filter)
-  // metaindex block: 指向Meta Block的索引
-  // Index BLocks: 指向Data Blocks的索引
-  // Footer : 指向索引的索引
+  /*************************************************
+   * Data Blocks: 存储一系列有序的key-value
+   * Meta Block：存储key-value对应的filter(默认为bloom filter)
+   * metaindex block: 指向Meta Block的索引
+   * Index BLocks: 指向Data Blocks的索引
+   * Footer : 指向索引的索引
+   ************************************************/
 
-  // 写入filter_block块，即图中的meta block
+  /** 2、写入filter_block块，即图中的meta block */
   if (ok() && r->filter_block != nullptr) {
     WriteRawBlock(r->filter_block->Finish(), kNoCompression,
                   &filter_block_handle);
   }
 
-  // 写入metaindex block
+  /** 3、写入metaindex block */
   if (ok()) {
     BlockBuilder meta_index_block(&r->options);
     if (r->filter_block != nullptr) {
@@ -234,7 +259,7 @@ Status TableBuilder::Finish() {
     WriteBlock(&meta_index_block, &metaindex_block_handle);
   }
 
-  // 写入index block
+  /** 4、写入index block */
   if (ok()) {
     if (r->pending_index_entry) {
       r->options.comparator->FindShortSuccessor(&r->last_key);
@@ -243,10 +268,14 @@ Status TableBuilder::Finish() {
       r->index_block.Add(r->last_key, Slice(handle_encoding));
       r->pending_index_entry = false;
     }
+    /** 写入index_block的内容
+     * 最重要的是，算出index_block在file中的offset和size，存放到index_block_handle中，
+     * 这个信息要记录在footer中
+     */
     WriteBlock(&r->index_block, &index_block_handle);
   }
 
-  // 写入footer， footer为固定长度，在文件的最尾部
+  /** 5、写入footer， footer为固定长度，在文件的最尾部 */
   if (ok()) {
     Footer footer;
     footer.set_metaindex_handle(metaindex_block_handle);
