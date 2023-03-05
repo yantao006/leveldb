@@ -124,17 +124,17 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
     r->pending_index_entry = false;
   }
 
-  // 更新filter_block的部分
+  /** 更新filter_block的部分 */
   if (r->filter_block != nullptr) {
     r->filter_block->AddKey(key);
   }
 
-  // 向data_block中添加一组key-value pair
+  /**  真正的Add逻辑：向data_block中添加一组key-value pair */
   r->last_key.assign(key.data(), key.size()); // 更新last_key的值
   r->num_entries++; // 更新计数
   r->data_block.Add(key, value); // 具体的添加操作，使用BlockBuild接口进行添加
 
-  // 当data_block的size超过4KB时，flush到sstable file中
+  /** 当data_block的size超过4KB时，flush到sstable file中 */
   const size_t estimated_block_size = r->data_block.CurrentSizeEstimate();
   if (estimated_block_size >= r->options.block_size) { // options.block_size默认为4KB
     Flush();
@@ -155,6 +155,8 @@ void TableBuilder::Flush() {
     r->pending_index_entry = true; // pending_index_entry置位
     r->status = r->file->Flush();
   }
+  /** 每次TableBuilder Flush的时候，也就是data_block写入文件的时候
+   * 进行filter_block的计算一轮位图的时候*/
   if (r->filter_block != nullptr) {
     r->filter_block->StartBlock(r->offset);
   }
@@ -262,6 +264,7 @@ Status TableBuilder::Finish() {
   /** 4、写入index block */
   if (ok()) {
     if (r->pending_index_entry) {
+      // 对last_key进行裁剪
       r->options.comparator->FindShortSuccessor(&r->last_key);
       std::string handle_encoding;
       r->pending_handle.EncodeTo(&handle_encoding);

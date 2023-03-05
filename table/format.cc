@@ -29,10 +29,10 @@ Status BlockHandle::DecodeFrom(Slice* input) {
 }
 
 void Footer::EncodeTo(std::string* dst) const {
-  const size_t original_size = dst->size();
+  const size_t original_size = dst->size(); // 一般情况下*dst为空，original_size为0
   metaindex_handle_.EncodeTo(dst);
   index_handle_.EncodeTo(dst);
-  dst->resize(2 * BlockHandle::kMaxEncodedLength);  // Padding
+  dst->resize(2 * BlockHandle::kMaxEncodedLength);  // Padding 不足的部分补空
   PutFixed32(dst, static_cast<uint32_t>(kTableMagicNumber & 0xffffffffu));
   PutFixed32(dst, static_cast<uint32_t>(kTableMagicNumber >> 32));
   assert(dst->size() == original_size + kEncodedLength);
